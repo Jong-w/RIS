@@ -67,25 +67,127 @@ class EnsembleCritic(nn.Module):
 
 """ High-level policy """
 
-class LaplacePolicy(nn.Module):	
+class hierarchy3_forth(nn.Module):
 	def __init__(self, state_dim, hidden_dims=[256, 256]):	
-		super(LaplacePolicy, self).__init__()	
-		fc = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		super(hierarchy3_forth, self).__init__()	
+		fc3 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
 		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
-			fc += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
-		self.fc = nn.Sequential(*fc)
+			fc3 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc3 = nn.Sequential(*fc3)
 
-		self.mean = nn.Linear(hidden_dims[-1], state_dim)	
-		self.log_scale = nn.Linear(hidden_dims[-1], state_dim)	
+		self.mean3 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale3 = nn.Linear(hidden_dims[-1], state_dim)	
 		self.LOG_SCALE_MIN = -20	
 		self.LOG_SCALE_MAX = 2	
 
+	def forward(self, state, goal):
+		h3 = self.fc3( torch.cat([state, goal], -1) )	
+		mean3 = self.mean3(h3)
+		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution3 = torch.distributions.laplace.Laplace(mean3, scale3)
+
+		return mean3, scale3, distribution3
+
+
+class hierarchy2_forth(nn.Module):
+	def __init__(self, state_dim, hidden_dims=[256, 256]):	
+		super(hierarchy2_forth, self).__init__()	
+		fc2 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
+			fc2 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc2 = nn.Sequential(*fc2)
+
+		self.mean2 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale2 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.LOG_SCALE_MIN = -20	
+		self.LOG_SCALE_MAX = 2	
+
+	def forward(self, state, goal):
+		h2 = self.fc2( torch.cat([state, goal], -1) )	
+		mean2 = self.mean2(h2)
+		scale2 = self.log_scale2(h2).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution2 = torch.distributions.laplace.Laplace(mean2, scale2)
+
+		return mean2, scale2, distribution2
+
+class LaplacePolicy(nn.Module):	
+	def __init__(self, state_dim, hidden_dims=[256, 256]):	
+		super(LaplacePolicy, self).__init__()	
+		fc1 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
+			fc1 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc1 = nn.Sequential(*fc1)
+		fc2 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
+			fc2 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc2 = nn.Sequential(*fc2)
+		fc3 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
+			fc3 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc3 = nn.Sequential(*fc3)
+		fc4 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
+			fc4 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc4 = nn.Sequential(*fc4)
+		fc5 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
+			fc5 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc5 = nn.Sequential(*fc5)
+
+
+		self.mean1 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.mean2 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.mean3 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.mean4 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.mean5 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale1 = nn.Linear(hidden_dims[-1], state_dim)
+		self.log_scale2 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale3 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale4 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale5 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.LOG_SCALE_MIN = -20	
+		self.LOG_SCALE_MAX = 2	
+
+		self.hierarchy2_forth = hierarchy2_forth(state_dim)
+		self.hierarchy3_forth = hierarchy3_forth(state_dim)
+
+	def hierarchy3_forth(self, state, goal):
+		h3 = self.fc3( torch.cat([state, goal], -1) )	
+		mean3 = self.mean3(h3)
+		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution3 = torch.distributions.laplace.Laplace(mean3, scale3)
+
+		return mean3, scale3, distribution3
+
+	def hierarchy2_forth(self, state, goal):
+		h2 = self.fc2( torch.cat([state, goal], -1) )	
+		mean2 = self.mean2(h2)
+		scale2 = self.log_scale2(h2).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution2 = torch.distributions.laplace.Laplace(mean2, scale2)
+
+		return mean2, scale2, distribution2
+
 	def forward(self, state, goal):	
-		h = self.fc( torch.cat([state, goal], -1) )	
-		mean = self.mean(h)
-		scale = self.log_scale(h).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution = torch.distributions.laplace.Laplace(mean, scale)
-		return distribution
+		'''
+		h5 = self.fc5( torch.cat([state, goal], -1) )	
+		mean5 = self.mean5(h5)
+		scale5 = self.log_scale1(h5).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution5 = torch.distributions.laplace.Laplace(mean5, scale5)
+
+		h4 = self.fc4( torch.cat([state, goal], -1) )	
+		mean4 = self.mean4(h4)
+		scale4 = self.log_scale4(h4).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution4 = torch.distributions.laplace.Laplace(mean4, scale4)'''
+
+		mean3, scale3, distribution3 = self.hierarchy3_forth(state, goal)
+		mean2, scale2, distribution2 = self.hierarchy2_forth(state, goal)
+
+		#distribution = distribution2
+		distribution = torch.distributions.laplace.Laplace((mean2+mean3)/2, (scale2+scale3)/2)
+		#(distribution2.loc + distribution3.loc) / (np.linalg.norm(distribution2.loc.detach().numpy()) + np.linalg.norm(distribution3.loc.detach().numpy()))
+
+		return distribution, distribution2, distribution3 #, distribution4, distribution5
+
 
 """ Encoder """
 def weights_init_encoder(m):

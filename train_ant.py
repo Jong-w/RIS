@@ -14,6 +14,9 @@ from utils.logger import Logger
 from RIS import RIS
 from HER import HERReplayBuffer, PathBuilder
 
+#cd /root/RIS
+#python3 train_ant.py
+
 
 def evalPolicy(policy, env, N=100, Tmax=100, distance_threshold=0.5, logger=None):
     final_distance = []
@@ -77,7 +80,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size",         default=2048, type=int)
     parser.add_argument("--replay_buffer_size", default=1e6, type=int)
     parser.add_argument("--n_eval",             default=5, type=int)
-    parser.add_argument("--device",             default="cuda")
+    parser.add_argument("--device",             default="cpu")
     parser.add_argument("--seed",               default=42, type=int)
     parser.add_argument("--exp_name",           default="RIS_ant")
     parser.add_argument("--alpha",              default=0.1, type=float)
@@ -146,10 +149,12 @@ if __name__ == "__main__":
     state = obs["observation"]
     goal = obs["desired_goal"]
     episode_timesteps = 0
+    total_timesteps = 0
     episode_num = 0 
 
     for t in range(int(args.max_timesteps)):
         episode_timesteps += 1
+        total_timesteps += 1
 
         # Select action
         if t < args.start_timesteps:
@@ -211,6 +216,7 @@ if __name__ == "__main__":
                 logger = logger
             )
             print("RIS | {}".format(logger))
+            #print("Steps: ", total_timesteps,  "success rate: ", logger.value.success_rate)
 
             # Save results
             folder = "results/{}/RIS/{}/".format(train_env_name, args.exp_name)
