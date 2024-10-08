@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from Models import GaussianPolicy, EnsembleCritic, LaplacePolicy, Encoder
+from Models_sampling import GaussianPolicy, EnsembleCritic, LaplacePolicy, Encoder#, Policy_Network   #####
 
 from utils.data_aug import random_translate
 
@@ -26,7 +26,14 @@ class RIS(object):
 
 		# Subgoal policy 
 		self.subgoal_net = LaplacePolicy(state_dim).to(device)
-		self.subgoal_optimizer = torch.optim.Adam(self.subgoal_net.parameters(), lr=h_lr)
+		
+		self.subgoal_optimizer_hierarchy5 = torch.optim.Adam(self.subgoal_net.hierarchy5.parameters(), lr=h_lr)
+		self.subgoal_optimizer_hierarchy4 = torch.optim.Adam(self.subgoal_net.hierarchy4.parameters(), lr=h_lr)
+		self.subgoal_optimizer_hierarchy3 = torch.optim.Adam(self.subgoal_net.hierarchy3.parameters(), lr=h_lr)
+		self.subgoal_optimizer_hierarchy2 = torch.optim.Adam(self.subgoal_net.hierarchy2.parameters(), lr=h_lr)
+
+		#policy network
+		self.policynetwork_optimizer = torch.optim.Adam(self.subgoal_net.policy_network.parameters(), lr=h_lr)
 
 		# Encoder (for vision-based envs)
 		self.image_env = image_env
@@ -90,11 +97,12 @@ class RIS(object):
 		return V
 
 	def sample_subgoal(self, state, goal):
-		subgoal_distribution = self.subgoal_net(state, goal)
-		subgoal = subgoal_distribution.rsample((self.n_ensemble,))
-		subgoal = torch.transpose(subgoal, 0, 1)
-		return subgoal
-
+		subgoal_distribution, _, _, _, _= self.subgoal_net(state, goal)   #same with original subgoal
+		#subgoal = subgoal_distribution.rsample((self.n_ensemble,))#this is only for sampling method not for original & gaussian
+		#subgoal = torch.transpose(subgoal, 0, 1)
+		#return subgoal
+		return subgoal_distribution
+	
 	def sample_action_and_KL(self, state, goal):
 		batch_size = state.size(0)
 		# Sample action, subgoals and KL-divergence
@@ -114,35 +122,84 @@ class RIS(object):
 
 	def train_highlevel_policy(self, state, goal, subgoal):
 		# Compute subgoal distribution 
-		subgoal_distribution = self.subgoal_net(state, goal)
+		#subgoal_distribution2, subgoal_distribution3, subgoal_distribution4, subgoal_distribution5 = self.subgoal_net(state, goal)#####
+		subgoal_distribution_final, subgoal_distribution2, subgoal_distribution3, subgoal_distribution4, subgoal_distribution5  = self.subgoal_net(state, goal)
 
 		with torch.no_grad():
 			# Compute target value
-			new_subgoal = subgoal_distribution.loc
-			policy_v_1 = self.value(state, new_subgoal)
-			policy_v_2 = self.value(new_subgoal, goal)
-			policy_v = torch.cat([policy_v_1, policy_v_2], -1).clamp(min=-100.0, max=0.0).abs().max(-1)[0]
+			new_subgoal2 = subgoal_distribution2.loc
+			new_subgoal3 = subgoal_distribution3.loc
+			new_subgoal4 = subgoal_distribution4.loc
+			new_subgoal5 = subgoal_distribution5.loc
 
+			weight_hierarchy = [1,1,1,1]
+
+			policy_v_1_hierarchy2 = weight_hierarchy[0] * self.value(state, new_subgoal2) 
+			policy_v_2_hierarchy2 = (2-weight_hierarchy[0]) * self.value(new_subgoal2, goal)  
+			policy_v_hierarchy2 = torch.cat([policy_v_1_hierarchy2, policy_v_2_hierarchy2], -1).clamp(min=-100.0, max=0.0).abs().max(-1)[0]
+
+			policy_v_1_hierarchy3 = weight_hierarchy[1] * self.value(state, new_subgoal3)
+			policy_v_2_hierarchy3 = (2-weight_hierarchy[1]) * self.value(new_subgoal3, goal)
+			policy_v_hierarchy3 = torch.cat([policy_v_1_hierarchy3, policy_v_2_hierarchy3], -1).clamp(min=-100.0, max=0.0).abs().max(-1)[0]
+			
+			policy_v_1_hierarchy4 = weight_hierarchy[2] * self.value(state, new_subgoal4)
+			policy_v_2_hierarchy4 = (2-weight_hierarchy[2]) * self.value(new_subgoal4, goal)
+			policy_v_hierarchy4 = torch.cat([policy_v_1_hierarchy4, policy_v_2_hierarchy4], -1).clamp(min=-100.0, max=0.0).abs().max(-1)[0]
+
+			policy_v_1_hierarchy5 = weight_hierarchy[3] * self.value(state, new_subgoal5)
+			policy_v_2_hierarchy5 = (2-weight_hierarchy[3]) * self.value(new_subgoal5, goal)
+			policy_v_hierarchy5 = torch.cat([policy_v_1_hierarchy5, policy_v_2_hierarchy5], -1).clamp(min=-100.0, max=0.0).abs().max(-1)[0]
 			# Compute subgoal distance loss
 			v_1 = self.value(state, subgoal)
 			v_2 = self.value(subgoal, goal)
 			v = torch.cat([v_1, v_2], -1).clamp(min=-100.0, max=0.0).abs().max(-1)[0]
-			adv = - (v - policy_v)
-			weight = F.softmax(adv/self.Lambda, dim=0)
+			adv2 = - (v - policy_v_hierarchy2)
+			weight2 = F.softmax(adv2/self.Lambda, dim=0)
+			adv3 = - (v - policy_v_hierarchy3)
+			weight3 = F.softmax(adv3/self.Lambda, dim=0)
+			adv4 = - (v - policy_v_hierarchy4)
+			weight4 = F.softmax(adv4/self.Lambda, dim=0)
+			adv5 = - (v - policy_v_hierarchy5)
+			weight5 = F.softmax(adv5/self.Lambda, dim=0)
 
-		log_prob = subgoal_distribution.log_prob(subgoal).sum(-1)
-		subgoal_loss = - (log_prob * weight).mean()
+		log_prob2 = subgoal_distribution2.log_prob(subgoal).sum(-1)
+		subgoal_loss2 = - (log_prob2 * weight2).mean()
+
+		log_prob3 = subgoal_distribution3.log_prob(subgoal).sum(-1)
+		subgoal_loss3 = - (log_prob3 * weight3).mean()
+
+		log_prob4 = subgoal_distribution4.log_prob(subgoal).sum(-1)
+		subgoal_loss4 = - (log_prob4 * weight4).mean()
+
+		log_prob5 = subgoal_distribution5.log_prob(subgoal).sum(-1)
+		subgoal_loss5 = - (log_prob5 * weight5).mean()
 
 		# Update network
-		self.subgoal_optimizer.zero_grad()
-		subgoal_loss.backward()
-		self.subgoal_optimizer.step()
+		#self.subgoal_optimizer.zero_grad()
+		#subgoal_loss.backward()
+		#self.subgoal_optimizer.step()
 		
-		# Log variables
+		self.subgoal_optimizer_hierarchy5.zero_grad()
+		subgoal_loss5.backward()
+		self.subgoal_optimizer_hierarchy5.step()
+		
+		self.subgoal_optimizer_hierarchy4.zero_grad()
+		subgoal_loss4.backward()
+		self.subgoal_optimizer_hierarchy4.step()
+
+		self.subgoal_optimizer_hierarchy3.zero_grad()
+		subgoal_loss3.backward()
+		self.subgoal_optimizer_hierarchy3.step()
+
+		self.subgoal_optimizer_hierarchy2.zero_grad()
+		subgoal_loss2.backward()
+		self.subgoal_optimizer_hierarchy2.step()
+
+		# Log variables   #we have to fix this to get better log data
 		if self.logger is not None:
 			self.logger.store(
-				adv = adv.mean().item(),
-				ratio_adv = adv.ge(0.0).float().mean().item(),
+				adv = adv2.mean().item(),
+				ratio_adv = adv2.ge(0.0).float().mean().item(),
 			)
 
 	def train(self, state, action, reward, next_state, done, goal, subgoal):
@@ -205,8 +262,16 @@ class RIS(object):
 
 		# Optimize the actor 
 		self.actor_optimizer.zero_grad()
-		actor_loss.backward()
+		self.policynetwork_optimizer.zero_grad()
+		actor_loss.backward(retain_graph=True)
 		self.actor_optimizer.step()
+		self.policynetwork_optimizer.step()
+
+		"""policy network learning"""
+		#actor_loss = (self.alpha*D_KL - Q).mean()
+		#self.policynetwork_optimizer.zero_grad()
+		#actor_loss.backward()
+		#self.policynetwork_optimizer.step()
 
 		# Update target networks
 		self.total_it += 1

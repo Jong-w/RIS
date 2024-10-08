@@ -60,7 +60,7 @@ def stack_list(lst):
     if isinstance(lst[0], dict):
         return lst
     else:
-        return np.array(lst)
+        return lst #np.array(1st)
 
 
 class HERReplayBuffer():

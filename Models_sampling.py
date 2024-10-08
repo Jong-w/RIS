@@ -55,7 +55,7 @@ class Policy_Network(nn.Module):
     def __init__(self, d, time_horizon, num_workers, device):
         super().__init__()
         self.device = device
-        self.Mrnn = DilatedLSTM(799, 3, time_horizon, device=device).to(device)
+        self.Mrnn = DilatedLSTM(124, 3, time_horizon, device=device).to(device)
         self.num_workers = num_workers
 		
     def forward(self, z, goal_5_norm, goal_4_norm, goal_3_norm, hidden, mask):
@@ -70,22 +70,6 @@ class Policy_Network(nn.Module):
 def init_hidden(n_workers, h_dim, device, grad=False):
     return (torch.zeros(n_workers, h_dim, requires_grad=grad).to(device),
             torch.zeros(n_workers, h_dim, requires_grad=grad).to(device))
-
-class Goal_Normalizer(nn.Module):
-    def __init__(self, hidden_dim):
-        super().__init__()
-        self.hidden_dim = hidden_dim
-    def forward(self, goal_5, goal_4, goal_3, goal_2):
-        minimum = min(goal_5.detach().min(), goal_4.detach().min(), goal_3.detach().min(), goal_2.detach().min())
-        maximum = max(goal_5.detach().max(), goal_4.detach().max(), goal_3.detach().max(), goal_2.detach().max())
-        goal_5_norm = (goal_5 - minimum) / (maximum - minimum)
-        goal_4_norm = (goal_4 - minimum) / (maximum - minimum)
-        goal_3_norm = (goal_3 - minimum) / (maximum - minimum)
-        goal_2_norm = (goal_2 - minimum) / (maximum - minimum)
-        return goal_5_norm, goal_4_norm, goal_3_norm, goal_2_norm
-
-
-
 
 """ Actor """
 
@@ -151,162 +135,128 @@ class EnsembleCritic(nn.Module):
 		return Q
 
 """ High-level policy """
-
 class hierarchy5(nn.Module):
 	def __init__(self, state_dim, hidden_dims=[256, 256]):	
 		super(hierarchy5, self).__init__()	
-		fc = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		fc3 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
 		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
-			fc += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
-		self.fc = nn.Sequential(*fc)
+			fc3 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc3 = nn.Sequential(*fc3)
 
-		self.mean = nn.Linear(hidden_dims[-1], state_dim)	
-		self.log_scale = nn.Linear(hidden_dims[-1], state_dim)	
+		self.mean3 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale3 = nn.Linear(hidden_dims[-1], state_dim)	
 		self.LOG_SCALE_MIN = -20	
 		self.LOG_SCALE_MAX = 2	
 
-	def forward_forth(self, state, goal):
-		h = self.fc( torch.cat([state, goal], -1) )	
+	def forward(self, state, goal):
+		h3 = self.fc3( torch.cat([state, goal], -1) )	
+		mean3 = self.mean3(h3)
+		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution3 =  torch.distributions.normal.Normal(mean3, scale3)
 
-		return h
-
-	def forward_back(self, h, hierarchies_selected):
-		h = hierarchies_selected[:, 0].unsqueeze(dim=1) * h
-		mean = self.mean(h)
-		scale = self.log_scale(h).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution = torch.distributions.laplace.Laplace(mean, scale)
-
-		return distribution
+		return mean3, scale3, distribution3
 	
 class hierarchy4(nn.Module):
 	def __init__(self, state_dim, hidden_dims=[256, 256]):	
 		super(hierarchy4, self).__init__()	
-		fc = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		fc3 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
 		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
-			fc += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
-		self.fc = nn.Sequential(*fc)
+			fc3 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc3 = nn.Sequential(*fc3)
 
-		self.mean = nn.Linear(hidden_dims[-1], state_dim)	
-		self.log_scale = nn.Linear(hidden_dims[-1], state_dim)	
-		self.hierarchy_forup = nn.Linear(hidden_dims[-1], hidden_dims[-1])	
+		self.mean3 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale3 = nn.Linear(hidden_dims[-1], state_dim)	
 		self.LOG_SCALE_MIN = -20	
 		self.LOG_SCALE_MAX = 2	
 
-	def forward_forth(self, state, goal):
-		h = self.fc( torch.cat([state, goal], -1) )	
+	def forward(self, state, goal):
+		h3 = self.fc3( torch.cat([state, goal], -1) )	
+		mean3 = self.mean3(h3)
+		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution3 =  torch.distributions.normal.Normal(mean3, scale3)
 
-		return h
-	
-	def forward_back(self, h, h_up, hierarchies_selected):
-		h_up = self.hierarchy_forup(h_up.detach())
-		h = hierarchies_selected[:, 1].unsqueeze(dim=1) * h
-		h = (h + h_up)
-		h = Normalizer(h)
-		mean = self.mean(h)
-		scale = self.log_scale(h).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution = torch.distributions.laplace.Laplace(mean, scale)
-
-		return distribution
+		return mean3, scale3, distribution3
 
 class hierarchy3(nn.Module):
 	def __init__(self, state_dim, hidden_dims=[256, 256]):	
 		super(hierarchy3, self).__init__()	
-		fc = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		fc3 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
 		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
-			fc += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
-		self.fc = nn.Sequential(*fc)
+			fc3 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc3 = nn.Sequential(*fc3)
 
-		self.mean = nn.Linear(hidden_dims[-1], state_dim)	
-		self.log_scale = nn.Linear(hidden_dims[-1], state_dim)	
-		self.hierarchy_forup = nn.Linear(hidden_dims[-1], hidden_dims[-1])	
+		self.mean3 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale3 = nn.Linear(hidden_dims[-1], state_dim)	
 		self.LOG_SCALE_MIN = -20	
 		self.LOG_SCALE_MAX = 2	
 
-	def forward_forth(self, state, goal):
-		h = self.fc( torch.cat([state, goal], -1) )	
+	def forward(self, state, goal):
+		h3 = self.fc3( torch.cat([state, goal], -1) )	
+		mean3 = self.mean3(h3)
+		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution3 =  torch.distributions.normal.Normal(mean3, scale3)
 
-		return h
-	
-	def forward_back(self, h, h_up, hierarchies_selected):
-		h_up = self.hierarchy_forup(h_up.detach())
-		h = hierarchies_selected[:, 2].unsqueeze(dim=1) * h
-		h = (h + h_up)
-		h = Normalizer(h)
-		mean = self.mean(h)
-		scale = self.log_scale(h).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution = torch.distributions.laplace.Laplace(mean, scale)
+		return mean3, scale3, distribution3
 
-		return distribution
-	
-	
+
 class hierarchy2(nn.Module):
 	def __init__(self, state_dim, hidden_dims=[256, 256]):	
 		super(hierarchy2, self).__init__()	
-		fc = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
+		fc2 = [nn.Linear(2*state_dim, hidden_dims[0]), nn.ReLU()]
 		for hidden_dim_in, hidden_dim_out in zip(hidden_dims[:-1], hidden_dims[1:]):
-			fc += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
-		self.fc = nn.Sequential(*fc)
+			fc2 += [nn.Linear(hidden_dim_in, hidden_dim_out), nn.ReLU()]
+		self.fc2 = nn.Sequential(*fc2)
 
-		self.mean = nn.Linear(hidden_dims[-1], state_dim)	
-		self.log_scale = nn.Linear(hidden_dims[-1], state_dim)	
-		self.hierarchy_forup = nn.Linear(hidden_dims[-1], hidden_dims[-1])	
+		self.mean2 = nn.Linear(hidden_dims[-1], state_dim)	
+		self.log_scale2 = nn.Linear(hidden_dims[-1], state_dim)	
 		self.LOG_SCALE_MIN = -20	
 		self.LOG_SCALE_MAX = 2	
 
-	def forward_forth(self, state, goal):
-		h = self.fc( torch.cat([state, goal], -1) )	
+	def forward(self, state, goal):
+		h2 = self.fc2( torch.cat([state, goal], -1) )	
+		mean2 = self.mean2(h2)
+		scale2 = self.log_scale2(h2).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
+		distribution2 = torch.distributions.normal.Normal(mean2, scale2)
 
-		return h
-	
-	def forward_back(self, h, h_up):
-		h_up = self.hierarchy_forup(h_up.detach())
-		h = (h + h_up)
-		h = Normalizer(h)
-		mean = self.mean(h)
-		scale = self.log_scale(h).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution = torch.distributions.laplace.Laplace(mean, scale)
-
-		return distribution
+		return mean2, scale2, distribution2
 
 class LaplacePolicy(nn.Module):	
 	def __init__(self, state_dim, hidden_dims=[256, 256]):	
-		super(LaplacePolicy, self).__init__()
-		
-		self.device=torch.device("cuda")
-
-		self.policy_network = Policy_Network(state_dim, 1, 2048, self.device)
+		super(LaplacePolicy, self).__init__()	
 
 		self.hierarchy5 = hierarchy5(state_dim)
 		self.hierarchy4 = hierarchy4(state_dim)
 		self.hierarchy3 = hierarchy3(state_dim)
 		self.hierarchy2 = hierarchy2(state_dim)
 
-		self.goal_normalizer = Goal_Normalizer(state_dim)
-
+				
+		self.device=torch.device("cuda")
+		self.policy_network = Policy_Network(state_dim, 1, 2048, self.device)
 		self.hidden_policy_network = init_hidden(2048, 300 * 4 * 31, device=self.device, grad=True)
 		self.masks = [torch.ones(2048, 1).to(self.device) for _ in range(2 * 1 + 1)]
 		self.hierarchies_selected = torch.ones_like(torch.empty(2048, 3))
+		
 
 	def forward(self, state, goal):	
-		
-		
-		h5 = self.hierarchy5.forward_forth(state, goal)
-		h4 = self.hierarchy4.forward_forth(state, goal)
-		h3 = self.hierarchy3.forward_forth(state, goal)
-		h2 = self.hierarchy2.forward_forth(state, goal)
+		mean5, scale5, distribution5 = self.hierarchy5(state, goal)
+		mean4, scale4, distribution4 = self.hierarchy4(state, goal)
+		mean3, scale3, distribution3 = self.hierarchy3(state, goal)
+		mean2, scale2, distribution2 = self.hierarchy2(state, goal)
 
-		h5, h4, h3, h2 = self.goal_normalizer(h5, h4, h3, h2)
-		self.hierarchies_selected, self.hidden_policy_network = self.policy_network(state, h5, h4, h3, self.hidden_policy_network, self.masks[-1])
-		
-		distribution5 = self.hierarchy5.forward_back(h5, self.hierarchies_selected)
-		distribution4 = self.hierarchy4.forward_back(h4, h5, self.hierarchies_selected)
-		distribution3 = self.hierarchy3.forward_back(h3, h4, self.hierarchies_selected)
-		distribution2 = self.hierarchy2.forward_back(h2, h3)
-		#distribution = distribution2
-		#distribution = torch.distributions.laplace.Laplace((mean2+mean3)/2, (scale2+scale3)/2)
-		#(distribution2.loc + distribution3.loc) / (np.linalg.norm(distribution2.loc.detach().numpy()) + np.linalg.norm(distribution3.loc.detach().numpy()))
+		#dis5_samples = torch.transpose(distribution5.rsample((30,)), 0, 1)
+		#dis4_samples = torch.transpose(distribution4.rsample((30,)), 0, 1)
+		num = 100
+		dis3_samples = torch.transpose(distribution3.rsample((num,)), 0, 1)
+		dis2_samples = torch.transpose(distribution2.rsample((num,)), 0, 1)
 
-		return distribution2, distribution3, distribution4, distribution5
+		#samples_tensor = torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 1)
+		samples_tensor = torch.cat((dis3_samples, dis2_samples), 1)  #(2048,60,31)
+
+		weights = torch.ones(2*num, requires_grad=True)
+		gumbel_softmax_samples = torch.stack([torch.nn.functional.gumbel_softmax(weights, tau=1, hard=False) for _ in range(10)]).to('cuda')  #(10, 60)
+		combined_distribution = torch.einsum('bci,nc->bni', samples_tensor,gumbel_softmax_samples)
+
+		return combined_distribution, distribution2, distribution3, distribution4, distribution5
 
 
 """ Encoder """
@@ -338,4 +288,3 @@ class Encoder(nn.Module):
 		h = self.encoder_conv(x).view(x.size(0), -1)
 		state = self.fc(h)
 		return state
-
