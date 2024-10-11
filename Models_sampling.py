@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import numpy as np
+import torch.distributions as dist
+
 
 class DilatedLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, radius=10, device='cuda'):
@@ -70,6 +72,20 @@ class Policy_Network(nn.Module):
 def init_hidden(n_workers, h_dim, device, grad=False):
     return (torch.zeros(n_workers, h_dim, requires_grad=grad).to(device),
             torch.zeros(n_workers, h_dim, requires_grad=grad).to(device))
+
+class CustomNormal(dist.Normal):
+    def rsample(self, sample_shape=torch.Size()):
+        # 기본적인 rsample 호출
+        sample = super().rsample(sample_shape)
+        
+        # mean이 텐서일 경우 처리
+        # 각 행에 대해 평균이 0인지 확인하고 샘플을 0으로 설정
+        if len(self.mean.shape) > 1:  # mean이 2D 텐서일 경우만 처리
+            zero_mask = (self.mean == 0).all(dim=-1)  # 각 행의 모든 값이 0인지 체크
+            zero_mask = zero_mask.unsqueeze(-1).expand_as(sample)  # mask 크기를 sample과 맞춤
+            sample[zero_mask] = 0  # 해당하는 행의 샘플 값을 0으로 설정
+        
+        return sample
 
 """ Actor """
 
@@ -152,7 +168,7 @@ class hierarchy5(nn.Module):
 		h3 = self.fc3( torch.cat([state, goal], -1) )	
 		mean3 = self.mean3(h3)
 		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution3 =  torch.distributions.normal.Normal(mean3, scale3)
+		distribution3 =  CustomNormal(mean3, scale3)
 
 		return mean3, scale3, distribution3
 	
@@ -173,7 +189,7 @@ class hierarchy4(nn.Module):
 		h3 = self.fc3( torch.cat([state, goal], -1) )	
 		mean3 = self.mean3(h3)
 		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution3 =  torch.distributions.normal.Normal(mean3, scale3)
+		distribution3 =  CustomNormal(mean3, scale3)
 
 		return mean3, scale3, distribution3
 
@@ -194,7 +210,7 @@ class hierarchy3(nn.Module):
 		h3 = self.fc3( torch.cat([state, goal], -1) )	
 		mean3 = self.mean3(h3)
 		scale3 = self.log_scale3(h3).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution3 =  torch.distributions.normal.Normal(mean3, scale3)
+		distribution3 =  CustomNormal(mean3, scale3)
 
 		return mean3, scale3, distribution3
 
@@ -216,7 +232,7 @@ class hierarchy2(nn.Module):
 		h2 = self.fc2( torch.cat([state, goal], -1) )	
 		mean2 = self.mean2(h2)
 		scale2 = self.log_scale2(h2).clamp(min=self.LOG_SCALE_MIN, max=self.LOG_SCALE_MAX).exp()	
-		distribution2 = torch.distributions.normal.Normal(mean2, scale2)
+		distribution2 = CustomNormal(mean2, scale2)
 
 		return mean2, scale2, distribution2
 
@@ -243,18 +259,31 @@ class LaplacePolicy(nn.Module):
 		mean3, scale3, distribution3 = self.hierarchy3(state, goal)
 		mean2, scale2, distribution2 = self.hierarchy2(state, goal)
 
+		self.hierarchies_selected, self.hidden_policy_network = self.policy_network(state, distribution5.loc, distribution4.loc, distribution3.loc, self.hidden_policy_network, self.masks[-1])
+
+		#normal_dist.loc = (hierarchy_delected[:,0].unsqueeze(dim=1) * normal_dist.loc) 
+		distribution5.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
+		distribution4.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
+		distribution3.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+
 		#dis5_samples = torch.transpose(distribution5.rsample((30,)), 0, 1)
 		#dis4_samples = torch.transpose(distribution4.rsample((30,)), 0, 1)
-		num = 100
-		dis3_samples = torch.transpose(distribution3.rsample((num,)), 0, 1)
-		dis2_samples = torch.transpose(distribution2.rsample((num,)), 0, 1)
+		num = 30
+		dis5_samples = distribution5.rsample((num,))
+		dis4_samples = distribution4.rsample((num,))
+		dis3_samples = distribution3.rsample((num,))
+		dis2_samples = distribution2.rsample((num,))
 
 		#samples_tensor = torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 1)
-		samples_tensor = torch.cat((dis3_samples, dis2_samples), 1)  #(2048,60,31)
-
-		weights = torch.ones(2*num, requires_grad=True)
-		gumbel_softmax_samples = torch.stack([torch.nn.functional.gumbel_softmax(weights, tau=1, hard=False) for _ in range(10)]).to('cuda')  #(10, 60)
-		combined_distribution = torch.einsum('bci,nc->bni', samples_tensor,gumbel_softmax_samples)
+		samples_tensor = torch.transpose(torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 0) , 0 , 1) 
+		
+		tensor_list = []
+		non_zero = (samples_tensor != 0).all(dim=2)
+		for i in range(2048):
+			tensor = samples_tensor[i,non_zero[i],:]
+			rand_num = torch.randperm(tensor.size(1))[:10]  
+			tensor_list.append(tensor[rand_num, : ])
+		combined_distribution = torch.stack(tensor_list, dim=0)
 
 		return combined_distribution, distribution2, distribution3, distribution4, distribution5
 

@@ -97,8 +97,9 @@ class RIS(object):
 		return V
 
 	def sample_subgoal(self, state, goal):
-		subgoal_distribution, _, _, _, _= self.subgoal_net(state, goal)   #same with original subgoal
-		#subgoal = subgoal_distribution.rsample((self.n_ensemble,))#this is only for sampling method not for original & gaussian
+		subgoal_distribution, distribution2, distribution3, distribution4, distribution5 = self.subgoal_net(state, goal)   #same with original subgoal
+		#subgoal = subgoal_distribution.rsample((self.n_ensemble,)) 
+		#subgoal = torch.cat([distribution2.rsample((3,)), distribution3.rsample((3,)), distribution4.rsample((3,)), distribution5.rsample((3,))])
 		#subgoal = torch.transpose(subgoal, 0, 1)
 		#return subgoal
 		return subgoal_distribution
@@ -132,7 +133,7 @@ class RIS(object):
 			new_subgoal4 = subgoal_distribution4.loc
 			new_subgoal5 = subgoal_distribution5.loc
 
-			weight_hierarchy = [1,1,1,1]
+			weight_hierarchy = [ 1.6, 1.2, 0.8, 0.4 ]
 
 			policy_v_1_hierarchy2 = weight_hierarchy[0] * self.value(state, new_subgoal2) 
 			policy_v_2_hierarchy2 = (2-weight_hierarchy[0]) * self.value(new_subgoal2, goal)  
@@ -198,8 +199,17 @@ class RIS(object):
 		# Log variables   #we have to fix this to get better log data
 		if self.logger is not None:
 			self.logger.store(
-				adv = adv2.mean().item(),
-				ratio_adv = adv2.ge(0.0).float().mean().item(),
+				adv5 = adv5.mean().item(),
+				ratio_adv5 = adv5.ge(0.0).float().mean().item(),
+
+				adv4 = adv4.mean().item(),
+				ratio_adv4 = adv4.ge(0.0).float().mean().item(),
+
+				adv3 = adv3.mean().item(),
+				ratio_adv3 = adv3.ge(0.0).float().mean().item(),
+
+				adv2 = adv2.mean().item(),
+				ratio_adv2 = adv2.ge(0.0).float().mean().item(),
 			)
 
 	def train(self, state, action, reward, next_state, done, goal, subgoal):

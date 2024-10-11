@@ -5,7 +5,7 @@ import numpy as np
 import random
 import argparse
 import wandb
-
+import matplotlib.pyplot as plt
 
 import gym
 from multiworld.envs.mujoco import register_custom_envs as register_mujoco_envs
@@ -23,6 +23,7 @@ from HER import HERReplayBuffer, PathBuilder
 def evalPolicy(policy, env, N=100, Tmax=100, distance_threshold=0.5, logger=None):
     final_distance = []
     successes = [] 
+    #more values should be included in here
 
     for _ in range(N):
         obs = env.reset()
@@ -225,9 +226,22 @@ if __name__ == "__main__":
             #print("RIS | {}".format(logger))
             print("success_rate: ", logger.data['success_rate'][-1], "step: ", total_timesteps)
             wandb.log(
-                {"success_rate":np.mean(logger.data['success_rate'][-1]).item(),
+                {"a_success_rate":np.mean(logger.data['success_rate'][-1]).item(),
+                 #'learning_log/t': np.mean(logger.data['t'][-1]).item(),
+                 'learning_log/distance': np.mean(logger.data['distance'][-1]).item(),
+                 'learning_log/adv5': np.mean(logger.data['adv5'][-1]).item(),
+                 'learning_log/adv4': np.mean(logger.data['adv4'][-1]).item(),
+                 'learning_log/adv3': np.mean(logger.data['adv3'][-1]).item(),
+                 'learning_log/adv2': np.mean(logger.data['adv2'][-1]).item(),
+                 'learning_log/ratio_adv5': np.mean(logger.data['ratio_adv5'][-1]).item(),
+                 'learning_log/ratio_adv4': np.mean(logger.data['ratio_adv4'][-1]).item(),
+                 'learning_log/ratio_adv3': np.mean(logger.data['ratio_adv3'][-1]).item(),
+                 'learning_log/ratio_adv2': np.mean(logger.data['ratio_adv2'][-1]).item(),
+                 'learning_log/actor_loss': np.mean(logger.data['actor_loss'][-1]).item(),
+                 'learning_log/critic_loss': np.mean(logger.data['critic_loss'][-1]).item(),
+                 'learning_log/D_KL': np.mean(logger.data['D_KL'][-1]).item(),
+                 'learning_log/eval_distance': np.mean(logger.data['eval_distance'][-1]).item(),
                 }, step=total_timesteps)
-            ##more logging is needed
 
             # Save results
             folder = "results/{}/RIS/{}/".format(train_env_name, args.exp_name)

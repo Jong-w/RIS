@@ -71,6 +71,7 @@ def init_hidden(n_workers, h_dim, device, grad=False):
     return (torch.zeros(n_workers, h_dim, requires_grad=grad).to(device),
             torch.zeros(n_workers, h_dim, requires_grad=grad).to(device))
 
+
 """ Actor """
 
 class GaussianPolicy(nn.Module):
