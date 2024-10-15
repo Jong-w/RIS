@@ -271,6 +271,21 @@ class LaplacePolicy(nn.Module):
 		distribution5_.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
 		distribution4_.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
 		distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+
+
+		samples_tensor = torch.cat([distribution3.loc, distribution4.loc, distribution5.loc, distribution2.loc],1)
+		tensor_list = []
+		for i in range(2048):
+			tensor = samples_tensor[i,(samples_tensor[i] != 0)]
+			rand_num = torch.randperm(tensor.shape[0])[:31]  
+			tensor_list.append(tensor[rand_num])
+		combined_distribution = torch.stack(tensor_list, dim=0)
+
+		combined_distribution = CustomNormal(combined_distribution, 1).rsample((10,))
+		combined_distribution = torch.transpose(combined_distribution, 0, 1)
+
+
+		
 		'''
 		num = 30
 		dis5_samples = distribution5.rsample((num,))
@@ -301,9 +316,9 @@ class LaplacePolicy(nn.Module):
 		combined_distribution = torch.transpose(combined_distribution, 0, 1)'''
 
 
-		num=10
-		combined_distribution = torch.cat([distribution3_.rsample((num,)), distribution4_.rsample((num,)), distribution5_.rsample((num,)), distribution2_.rsample((num,))],0)
-		combined_distribution = torch.transpose(combined_distribution, 0, 1)
+		#num=10
+		#combined_distribution = torch.cat([distribution3_.rsample((num,)), distribution4_.rsample((num,)), distribution5_.rsample((num,)), distribution2_.rsample((num,))],0)
+		#combined_distribution = torch.transpose(combined_distribution, 0, 1)
 
 		return combined_distribution, distribution2, distribution3, distribution4, distribution5
 
