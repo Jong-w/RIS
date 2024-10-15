@@ -86,6 +86,7 @@ class CustomNormal(dist.Normal):
             sample[zero_mask] = 0  # 해당하는 행의 샘플 값을 0으로 설정
         
         return sample
+	
 
 """ Actor """
 
@@ -104,7 +105,7 @@ class GaussianPolicy(nn.Module):
 
 	def forward(self, state, goal):
 		x = self.fc(torch.cat([state, goal], -1))
-		mean = self.mean_linear(x)
+		mean = self.mean_linear(x)    #noormalization to goal is needed? 
 		log_std = self.logstd_linear(x)
 		std = torch.clamp(log_std, min=self.LOG_SIG_MIN, max=self.LOG_SIG_MAX).exp()
 		normal = torch.distributions.Normal(mean, std)
@@ -261,20 +262,22 @@ class LaplacePolicy(nn.Module):
 
 		self.hierarchies_selected, self.hidden_policy_network = self.policy_network(state, distribution5.loc, distribution4.loc, distribution3.loc, self.hidden_policy_network, self.masks[-1])
 
-		#normal_dist.loc = (hierarchy_delected[:,0].unsqueeze(dim=1) * normal_dist.loc) 
-		distribution5.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
-		distribution4.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
-		distribution3.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+		distribution5_ = distribution5
+		distribution4_ = distribution4
+		distribution3_ = distribution3
+		distribution2_ = distribution2
 
-		#dis5_samples = torch.transpose(distribution5.rsample((30,)), 0, 1)
-		#dis4_samples = torch.transpose(distribution4.rsample((30,)), 0, 1)
+
+		distribution5_.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
+		distribution4_.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
+		distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+		'''
 		num = 30
 		dis5_samples = distribution5.rsample((num,))
 		dis4_samples = distribution4.rsample((num,))
 		dis3_samples = distribution3.rsample((num,))
 		dis2_samples = distribution2.rsample((num,))
 
-		#samples_tensor = torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 1)
 		samples_tensor = torch.transpose(torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 0) , 0 , 1) 
 		
 		tensor_list = []
@@ -283,7 +286,24 @@ class LaplacePolicy(nn.Module):
 			tensor = samples_tensor[i,non_zero[i],:]
 			rand_num = torch.randperm(tensor.size(1))[:10]  
 			tensor_list.append(tensor[rand_num, : ])
-		combined_distribution = torch.stack(tensor_list, dim=0)
+		combined_distribution = torch.stack(tensor_list, dim=0)'''
+		'''
+
+		means_concat = torch.cat([distribution2.loc,distribution3.loc, distribution4.loc, distribution5.loc], dim=1)
+		shuffled_indices = torch.randperm(means_concat.size(1))
+		means_concat = means_concat[:, shuffled_indices]
+		non_zero_rows = [row[row != 0] for row in means_concat]
+		max_len = max(len(row) for row in non_zero_rows)
+		padded_rows = [torch.cat([row, torch.zeros(max_len - len(row)).to(self.device)]) for row in non_zero_rows]
+		result = torch.stack(padded_rows)
+
+		combined_distribution = CustomNormal(result[:, :31], 1).rsample((10,))
+		combined_distribution = torch.transpose(combined_distribution, 0, 1)'''
+
+
+		num=10
+		combined_distribution = torch.cat([distribution3_.rsample((num,)), distribution4_.rsample((num,)), distribution5_.rsample((num,)), distribution2_.rsample((num,))],0)
+		combined_distribution = torch.transpose(combined_distribution, 0, 1)
 
 		return combined_distribution, distribution2, distribution3, distribution4, distribution5
 
