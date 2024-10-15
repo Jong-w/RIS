@@ -277,7 +277,9 @@ class LaplacePolicy(nn.Module):
 		tensor_list = []
 		for i in range(2048):
 			tensor = samples_tensor[i,(samples_tensor[i] != 0)]
-			rand_num = torch.randperm(tensor.shape[0])[:31]  
+			
+			rand_num = torch.randperm(int(tensor.shape[0]))[:10]  
+			
 			tensor_list.append(tensor[rand_num])
 		combined_distribution = torch.stack(tensor_list, dim=0)
 
