@@ -273,30 +273,58 @@ class LaplacePolicy(nn.Module):
 		distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
 
 
-		samples_tensor = torch.cat([distribution3.loc, distribution4.loc, distribution5.loc, distribution2.loc],1)
-		tensor_list = []
-		for i in range(2048):
-			tensor = samples_tensor[i,(samples_tensor[i] != 0)]
-			
-			rand_num = torch.randperm(int(tensor.shape[0]))[:10]  
-			
-			tensor_list.append(tensor[rand_num])
-		combined_distribution = torch.stack(tensor_list, dim=0)
-
-		combined_distribution = CustomNormal(combined_distribution, 1).rsample((10,))
-		combined_distribution = torch.transpose(combined_distribution, 0, 1)
-
-
 		
-		'''
-		num = 30
+		
+		num = 100
 		dis5_samples = distribution5.rsample((num,))
 		dis4_samples = distribution4.rsample((num,))
 		dis3_samples = distribution3.rsample((num,))
 		dis2_samples = distribution2.rsample((num,))
 
 		samples_tensor = torch.transpose(torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 0) , 0 , 1) 
-		
+
+		split_tensors = torch.unbind(samples_tensor, dim=-1)
+
+		# 히스토그램 bins 설정 (여기서는 10개 구간으로 나눔)
+		num_bins = 10
+		min_value = -300  # 히스토그램의 최소값
+		max_value = 300   # 히스토그램의 최대값
+
+		# bin 중간값 계산 (torch.histc에서는 bin 경계를 설정할 수 없으므로 수동으로 계산)
+		bin_edges = torch.linspace(min_value, max_value, num_bins + 1)
+		bin_middles = (bin_edges[:-1] + bin_edges[1:]) / 2  # bins 중간값 계산
+
+		# 모든 split_tensors에 대해 샘플링을 수행할 리스트
+		all_samples = []
+
+		# 각 split_tensor에 대해 히스토그램 계산하고 샘플링
+		for tensor in split_tensors:
+			# 샘플링을 위한 리스트
+			samples = []
+			
+			for row in tensor:
+				# 0이 아닌 값들만 선택
+				non_zero_values = row[row != 0]
+				# 각 행(row)에 대해 히스토그램 계산 (torch.histc 사용)
+				hist = torch.histc(non_zero_values, bins=num_bins, min=min_value, max=max_value)
+
+				# 히스토그램을 확률 분포로 변환
+				prob = hist.float() / hist.sum()
+
+				# 확률에 따라 10개의 샘플링 (bin의 인덱스를 반환)
+				sampled_bins = torch.multinomial(prob, 10, replacement=True)  # replacement=True로 설정하여 중복 허용
+
+				# 샘플링된 bin의 중간값을 저장
+				bin_middles = bin_middles.to(self.device)
+				sampled_values = bin_middles[sampled_bins]
+				samples.append(sampled_values)
+
+			# 각 split_tensor에 대한 샘플링 결과를 저장
+			all_samples.append(torch.stack(samples).unsqueeze(dim=2))  # (2048, 10)
+
+		combined_distribution = torch.cat((all_samples),dim=2)
+
+		'''
 		tensor_list = []
 		non_zero = (samples_tensor != 0).all(dim=2)
 		for i in range(2048):
@@ -304,8 +332,8 @@ class LaplacePolicy(nn.Module):
 			rand_num = torch.randperm(tensor.size(1))[:10]  
 			tensor_list.append(tensor[rand_num, : ])
 		combined_distribution = torch.stack(tensor_list, dim=0)'''
+	
 		'''
-
 		means_concat = torch.cat([distribution2.loc,distribution3.loc, distribution4.loc, distribution5.loc], dim=1)
 		shuffled_indices = torch.randperm(means_concat.size(1))
 		means_concat = means_concat[:, shuffled_indices]
