@@ -5,14 +5,11 @@ import torch.distributions as dist
 from torch.distributions import MixtureSameFamily, Categorical, Normal, Independent
 
 class MixtureSameFamilyWithRsample(MixtureSameFamily):
-    def rsample(self, sample_shape=torch.Size(), min_val=None, max_val=None):
+    def rsample(self, sample_shape=torch.Size(), min_val=-100000000, max_val=100000000):
         mixture_idx = self.mixture_distribution.sample(sample_shape)  # shape: [10, 2048] 원래     mix는 (2048,4)
         component_samples = self.component_distribution.rsample(sample_shape)  # shape: [10, 2048, 4, 31]   원래 comp는 (2048, 4, 31)
 
-        if min_val is not None:
-            component_samples = torch.clamp(component_samples, min=min_val)
-        if max_val is not None:
-            component_samples = torch.clamp(component_samples, max=max_val)
+        component_samples = torch.clamp(component_samples, min=min_val, max=max_val) 
 
         mixture_idx = mixture_idx.unsqueeze(-1).unsqueeze(-1)  # shape: [10, 2048, 1, 1]
 
@@ -298,7 +295,8 @@ class LaplacePolicy(nn.Module):
 
 		means = torch.stack([distribution2.loc, distribution3.loc, distribution4.loc, distribution5.loc], dim=1)  # (2048, 4, 31)
 		stds = torch.stack([distribution2.scale, distribution3.scale, distribution4.scale, distribution5.scale], dim=1)  # (2048, 4, 31)
-		comp = Independent(Normal(means, stds), 1)
+		#comp = Independent(Normal(means, stds), 1)   # independent -> change input to multivariate?
+		comp = Normal(means, stds)
 
 		gmm = MixtureSameFamilyWithRsample(mix, comp)
 		combined_distribution = gmm.rsample((10,), min_val=-5000.0, max_val=5000.0) 
