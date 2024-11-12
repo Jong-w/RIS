@@ -258,13 +258,15 @@ class hierarchy2(nn.Module):
 		return mean2, scale2, distribution2
 
 class LaplacePolicy(nn.Module):	
-	def __init__(self, state_dim, hidden_dims=[256, 256]):	
+	def __init__(self, state_dim, hidden_dims=[256, 256], drop = 1):	
 		super(LaplacePolicy, self).__init__()	
 
 		self.hierarchy5 = hierarchy5(state_dim)
 		self.hierarchy4 = hierarchy4(state_dim)
 		self.hierarchy3 = hierarchy3(state_dim)
 		self.hierarchy2 = hierarchy2(state_dim)
+
+		self.drop = drop
 
 				
 		self.device=torch.device("cuda")
@@ -286,7 +288,10 @@ class LaplacePolicy(nn.Module):
 		#distribution5_.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
 		#distribution4_.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
 		#distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
-		self.hierarchies_selected = torch.cat([self.hierarchies_selected, torch.ones((2048,1))], dim=1)
+		if self.drop:
+			self.hierarchies_selected = torch.cat([self.hierarchies_selected, torch.ones((2048,1)).to(self.device)], dim=1)
+		else: 
+			torch.ones((2048,4))
 		self.hierarchies_selected = self.hierarchies_selected / (self.hierarchies_selected.sum(dim=1, keepdim=True))
 
 		mix = Categorical(self.hierarchies_selected)

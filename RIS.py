@@ -11,7 +11,7 @@ import torch.nn as nn
 
 
 class RIS(object):
-	def __init__(self, state_dim, action_dim, alpha=0.1, Lambda=0.1, image_env=False, n_ensemble=10, gamma=0.99, tau=0.005, target_update_interval=1, h_lr=1e-4, q_lr=1e-3, pi_lr=1e-4, enc_lr=1e-4, epsilon=1e-16, logger=None, device=torch.device("cuda")):		
+	def __init__(self, state_dim, action_dim, alpha=0.1, Lambda=0.1, image_env=False, n_ensemble=10, gamma=0.99, tau=0.005, target_update_interval=1, h_lr=1e-4, q_lr=1e-3, pi_lr=1e-4, enc_lr=1e-4, epsilon=1e-16, logger=None, device=torch.device("cuda"), drop=1):		
 		# Actor
 		self.actor = GaussianPolicy(state_dim, action_dim).to(device)
 		self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=pi_lr)
@@ -25,7 +25,7 @@ class RIS(object):
 		self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=q_lr)
 
 		# Subgoal policy 
-		self.subgoal_net = LaplacePolicy(state_dim).to(device)
+		self.subgoal_net = LaplacePolicy(state_dim, drop).to(device)
 		
 		self.subgoal_optimizer_hierarchy5 = torch.optim.Adam(self.subgoal_net.hierarchy5.parameters(), lr=h_lr)
 		self.subgoal_optimizer_hierarchy4 = torch.optim.Adam(self.subgoal_net.hierarchy4.parameters(), lr=h_lr)

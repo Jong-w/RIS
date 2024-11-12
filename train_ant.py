@@ -93,6 +93,9 @@ if __name__ == "__main__":
     parser.add_argument("--pi_lr",              default=1e-3, type=float)
     parser.add_argument('--log_loss', dest='log_loss', action='store_true')
     parser.add_argument('--no-log_loss', dest='log_loss', action='store_false')
+
+    parser.add_argument("--drop",              default=1, type=float)
+
     parser.set_defaults(log_loss=True)
     args = parser.parse_args()
     print(args)
@@ -131,7 +134,8 @@ if __name__ == "__main__":
 
     # Create logger
     logger = Logger(vars(args))
-    policy = RIS(state_dim=state_dim, action_dim=action_dim, alpha=args.alpha, Lambda=args.Lambda, h_lr=args.h_lr, q_lr=args.q_lr, pi_lr=args.pi_lr, device=args.device, logger=logger if args.log_loss else None)
+    policy = RIS(state_dim=state_dim, action_dim=action_dim, alpha=args.alpha, Lambda=args.Lambda, h_lr=args.h_lr, q_lr=args.q_lr, pi_lr=args.pi_lr, device=args.device, logger=logger if args.log_loss else None
+                ,drop = args.drop)
    
     # Initialize replay buffer and path_builder
     replay_buffer = HERReplayBuffer(
