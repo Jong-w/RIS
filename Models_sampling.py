@@ -2,8 +2,28 @@ import torch
 from torch import nn
 import numpy as np
 import torch.distributions as dist
+from torch.distributions import MixtureSameFamily, Categorical, Normal, Independent
+
+class MixtureSameFamilyWithRsample(MixtureSameFamily):
+    def rsample(self, sample_shape=torch.Size(), min_val=None, max_val=None):
+        mixture_idx = self.mixture_distribution.sample(sample_shape)  # shape: [10, 2048] 원래     mix는 (2048,4)
+        component_samples = self.component_distribution.rsample(sample_shape)  # shape: [10, 2048, 4, 31]   원래 comp는 (2048, 4, 31)
+
+        if min_val is not None:
+            component_samples = torch.clamp(component_samples, min=min_val)
+        if max_val is not None:
+            component_samples = torch.clamp(component_samples, max=max_val)
+
+        mixture_idx = mixture_idx.unsqueeze(-1).unsqueeze(-1)  # shape: [10, 2048, 1, 1]
+
+        samples = torch.gather(component_samples, 2, mixture_idx.expand(-1, -1, -1, component_samples.shape[-1]))  # shape: [10, 2048, 1, 31]
 
 
+        samples = samples.squeeze(2)  # shape: [10, 2048, 31]
+        samples = samples.permute(1, 0, 2)  # shape: [2048, 10, 31]
+
+        return samples
+	
 class DilatedLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, radius=10, device='cuda'):
         super().__init__()
@@ -262,19 +282,23 @@ class LaplacePolicy(nn.Module):
 
 		self.hierarchies_selected, self.hidden_policy_network = self.policy_network(state, distribution5.loc, distribution4.loc, distribution3.loc, self.hidden_policy_network, self.masks[-1])
 
-		distribution5_ = distribution5
-		distribution4_ = distribution4
-		distribution3_ = distribution3
-		distribution2_ = distribution2
+		#self.hierarchies_selected = self.hierarchies_selected.float().masked_fill(self.hierarchies_selected == 0, -100000)
+		#distribution5_.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
+		#distribution4_.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
+		#distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+		self.hierarchies_selected = torch.cat([self.hierarchies_selected, torch.ones((2048,1))], dim=1)
+		self.hierarchies_selected = self.hierarchies_selected / (self.hierarchies_selected.sum(dim=1, keepdim=True))
 
+		mix = Categorical(self.hierarchies_selected)
 
-		distribution5_.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
-		distribution4_.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
-		distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+		means = torch.stack([distribution2.loc, distribution3.loc, distribution4.loc, distribution5.loc], dim=1)  # (2048, 4, 31)
+		stds = torch.stack([distribution2.scale, distribution3.scale, distribution4.scale, distribution5.scale], dim=1)  # (2048, 4, 31)
+		comp = Independent(Normal(means, stds), 1)
 
-
+		gmm = MixtureSameFamilyWithRsample(mix, comp)
+		combined_distribution = gmm.rsample((10,), min_val=-5000.0, max_val=5000.0) 
 		
-		
+		'''
 		num = 100
 		dis5_samples = distribution5.rsample((num,))
 		dis4_samples = distribution4.rsample((num,))
@@ -322,28 +346,10 @@ class LaplacePolicy(nn.Module):
 			# 각 split_tensor에 대한 샘플링 결과를 저장
 			all_samples.append(torch.stack(samples).unsqueeze(dim=2))  # (2048, 10)
 
-		combined_distribution = torch.cat((all_samples),dim=2)
+		combined_distribution = torch.cat((all_samples),dim=2)'''
 
-		'''
-		tensor_list = []
-		non_zero = (samples_tensor != 0).all(dim=2)
-		for i in range(2048):
-			tensor = samples_tensor[i,non_zero[i],:]
-			rand_num = torch.randperm(tensor.size(1))[:10]  
-			tensor_list.append(tensor[rand_num, : ])
-		combined_distribution = torch.stack(tensor_list, dim=0)'''
-	
-		'''
-		means_concat = torch.cat([distribution2.loc,distribution3.loc, distribution4.loc, distribution5.loc], dim=1)
-		shuffled_indices = torch.randperm(means_concat.size(1))
-		means_concat = means_concat[:, shuffled_indices]
-		non_zero_rows = [row[row != 0] for row in means_concat]
-		max_len = max(len(row) for row in non_zero_rows)
-		padded_rows = [torch.cat([row, torch.zeros(max_len - len(row)).to(self.device)]) for row in non_zero_rows]
-		result = torch.stack(padded_rows)
 
-		combined_distribution = CustomNormal(result[:, :31], 1).rsample((10,))
-		combined_distribution = torch.transpose(combined_distribution, 0, 1)'''
+
 
 
 		#num=10
