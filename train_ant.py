@@ -100,8 +100,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    wandb.init(project="MDM_100k_collect_test",
+    wandb.init(project="RIS",
     config=args.__dict__)
+    wandb.run.name = "RIS_hierarchy_drop"
 
     # select environment
     if args.env_name == "AntU":

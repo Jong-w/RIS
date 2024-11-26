@@ -3,13 +3,16 @@ from torch import nn
 import numpy as np
 import torch.distributions as dist
 from torch.distributions import MixtureSameFamily, Categorical, Normal, Independent
-
+'''
 class MixtureSameFamilyWithRsample(MixtureSameFamily):
-    def rsample(self, sample_shape=torch.Size(), min_val=-100000000, max_val=100000000):
+    def rsample(self, sample_shape=torch.Size(), min_val=None, max_val=None):
         mixture_idx = self.mixture_distribution.sample(sample_shape)  # shape: [10, 2048] 원래     mix는 (2048,4)
         component_samples = self.component_distribution.rsample(sample_shape)  # shape: [10, 2048, 4, 31]   원래 comp는 (2048, 4, 31)
 
-        component_samples = torch.clamp(component_samples, min=min_val, max=max_val) 
+        if min_val is not None:
+            component_samples = torch.clamp(component_samples, min=min_val)
+        if max_val is not None:
+            component_samples = torch.clamp(component_samples, max=max_val)
 
         mixture_idx = mixture_idx.unsqueeze(-1).unsqueeze(-1)  # shape: [10, 2048, 1, 1]
 
@@ -20,7 +23,40 @@ class MixtureSameFamilyWithRsample(MixtureSameFamily):
         samples = samples.permute(1, 0, 2)  # shape: [2048, 10, 31]
 
         return samples
-	
+
+'''
+
+class MixtureSameFamilyWithRsample(MixtureSameFamily):
+    
+    def rsample(self, sample_shape=torch.Size(), min_val=None, max_val=None, mix_probs=torch.tensor([0.25, 0.25, 0.25, 0.25]).expand(2048, 4) ):
+        #mix_probs = torch.tensor([0.25, 0.25, 0.25, 0.25]).expand(2048, 4)
+        mixture_distribution = Categorical(mix_probs)
+        # mixture_idx 생성 (선택된 컴포넌트의 인덱스)
+        mixture_idx = mixture_distribution.sample(sample_shape)  # shape: [10, 2048]    원래 mix는 (2048,4)
+
+        # 각 component 분포에서 샘플 생성
+        component_samples = self.component_distribution.rsample(sample_shape)  # shape: [10, 2048, 4, 31]  원래 comp는 (2048, 4, 31)
+
+        # min, max 값으로 클램핑
+        if min_val is not None:
+            component_samples = torch.clamp(component_samples, min=min_val)
+        if max_val is not None:
+            component_samples = torch.clamp(component_samples, max=max_val)
+
+        # mixture_idx의 모양을 [10, 2048, 1, 1]로 확장하여 각 샘플의 인덱스에 맞는 컴포넌트 선택
+        mixture_idx = mixture_idx.unsqueeze(-1).unsqueeze(-1)  # shape: [10, 2048, 1, 1]
+
+        # 각 샘플의 선택된 컴포넌트를 gather로 선택하여 최종 샘플 텐서 생성
+        samples = torch.gather(component_samples, 2, mixture_idx.expand(-1, -1, -1, component_samples.shape[-1]).to('cuda'))  # shape: [10, 2048, 1, 31]
+
+        # 마지막 차원의 불필요한 1차원 제거
+        samples = samples.squeeze(2)  # shape: [10, 2048, 31]
+
+        # 최종적으로 (2048, 10, 31) 형태로 리쉐이프
+        samples = samples.permute(1, 0, 2)  # shape: [2048, 10, 31]
+
+        return samples
+
 class DilatedLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, radius=10, device='cuda'):
         super().__init__()
@@ -281,79 +317,35 @@ class LaplacePolicy(nn.Module):
 
 		self.hierarchies_selected, self.hidden_policy_network = self.policy_network(state, distribution5.loc, distribution4.loc, distribution3.loc, self.hidden_policy_network, self.masks[-1])
 
-		#self.hierarchies_selected = self.hierarchies_selected.float().masked_fill(self.hierarchies_selected == 0, -100000)
-		#distribution5_.loc = self.hierarchies_selected[:, 0].unsqueeze(dim=1) * distribution5.loc
-		#distribution4_.loc = self.hierarchies_selected[:, 1].unsqueeze(dim=1) * distribution4.loc
-		#distribution3_.loc = self.hierarchies_selected[:, 2].unsqueeze(dim=1) * distribution3.loc
+		
 		if self.drop:
 			self.hierarchies_selected = torch.cat([self.hierarchies_selected, torch.ones((2048,1)).to(self.device)], dim=1)
 		else: 
 			torch.ones((2048,4))
 		self.hierarchies_selected = self.hierarchies_selected / (self.hierarchies_selected.sum(dim=1, keepdim=True))
-
+		
+		'''
 		mix = Categorical(self.hierarchies_selected)
+		
+		means = torch.stack([distribution2.loc, distribution3.loc, distribution4.loc, distribution5.loc], dim=1)  # (2048, 4, 31)
+		stds = torch.stack([distribution2.scale, distribution3.scale, distribution4.scale, distribution5.scale], dim=1)  # (2048, 4, 31)
+		comp = Independent(Normal(means, stds), 1)   # independent -> change input to multivariate?
+
+		gmm = MixtureSameFamilyWithRsample(mix, comp)
+		combined_distribution = gmm.rsample((10,), min_val=-5000.0, max_val=5000.0) '''
+		
+		mix_probs = torch.full((2048, 4, 31), 0.25)
+		mix = Categorical(mix_probs)
 
 		means = torch.stack([distribution2.loc, distribution3.loc, distribution4.loc, distribution5.loc], dim=1)  # (2048, 4, 31)
 		stds = torch.stack([distribution2.scale, distribution3.scale, distribution4.scale, distribution5.scale], dim=1)  # (2048, 4, 31)
-		#comp = Independent(Normal(means, stds), 1)   # independent -> change input to multivariate?
-		comp = Normal(means, stds)
+		comp = Normal(means, stds) 
+
 
 		gmm = MixtureSameFamilyWithRsample(mix, comp)
-		combined_distribution = gmm.rsample((10,), min_val=-5000.0, max_val=5000.0) 
+
+		combined_distribution = gmm.rsample((10,), min_val=-5.0, max_val=5.0, mix_probs =self.hierarchies_selected)  # shape: [2048, 10, 31]
 		
-		'''
-		num = 100
-		dis5_samples = distribution5.rsample((num,))
-		dis4_samples = distribution4.rsample((num,))
-		dis3_samples = distribution3.rsample((num,))
-		dis2_samples = distribution2.rsample((num,))
-
-		samples_tensor = torch.transpose(torch.cat((dis5_samples, dis4_samples, dis3_samples, dis2_samples), 0) , 0 , 1) 
-
-		split_tensors = torch.unbind(samples_tensor, dim=-1)
-
-		# 히스토그램 bins 설정 (여기서는 10개 구간으로 나눔)
-		num_bins = 10
-		min_value = -300  # 히스토그램의 최소값
-		max_value = 300   # 히스토그램의 최대값
-
-		# bin 중간값 계산 (torch.histc에서는 bin 경계를 설정할 수 없으므로 수동으로 계산)
-		bin_edges = torch.linspace(min_value, max_value, num_bins + 1)
-		bin_middles = (bin_edges[:-1] + bin_edges[1:]) / 2  # bins 중간값 계산
-
-		# 모든 split_tensors에 대해 샘플링을 수행할 리스트
-		all_samples = []
-
-		# 각 split_tensor에 대해 히스토그램 계산하고 샘플링
-		for tensor in split_tensors:
-			# 샘플링을 위한 리스트
-			samples = []
-			
-			for row in tensor:
-				# 0이 아닌 값들만 선택
-				non_zero_values = row[row != 0]
-				# 각 행(row)에 대해 히스토그램 계산 (torch.histc 사용)
-				hist = torch.histc(non_zero_values, bins=num_bins, min=min_value, max=max_value)
-
-				# 히스토그램을 확률 분포로 변환
-				prob = hist.float() / hist.sum()
-
-				# 확률에 따라 10개의 샘플링 (bin의 인덱스를 반환)
-				sampled_bins = torch.multinomial(prob, 10, replacement=True)  # replacement=True로 설정하여 중복 허용
-
-				# 샘플링된 bin의 중간값을 저장
-				bin_middles = bin_middles.to(self.device)
-				sampled_values = bin_middles[sampled_bins]
-				samples.append(sampled_values)
-
-			# 각 split_tensor에 대한 샘플링 결과를 저장
-			all_samples.append(torch.stack(samples).unsqueeze(dim=2))  # (2048, 10)
-
-		combined_distribution = torch.cat((all_samples),dim=2)'''
-
-
-
-
 
 		#num=10
 		#combined_distribution = torch.cat([distribution3_.rsample((num,)), distribution4_.rsample((num,)), distribution5_.rsample((num,)), distribution2_.rsample((num,))],0)

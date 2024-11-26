@@ -71,7 +71,7 @@ def sample_and_preprocess_batch(replay_buffer, batch_size=1024, distance_thresho
 
 if __name__ == "__main__":	
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env_name",                default="AntU")
+    parser.add_argument("--env_name",                default="AntFg")
     parser.add_argument("--distance_threshold", default=0.5, type=float)
     parser.add_argument("--start_timesteps",    default=1e4, type=int) 
     parser.add_argument("--eval_freq",          default=1e3, type=int)
@@ -94,8 +94,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    wandb.init(project="MDM_100k_collect_test",
+    wandb.init(project="RIS",
     config=args.__dict__)
+    wandb.run.name = "RIS_original_fg"
+
 
     # select environment
     if args.env_name == "AntU":
@@ -221,7 +223,7 @@ if __name__ == "__main__":
             #print("RIS | {}".format(logger))
             print("success_rate: ", logger.data['success_rate'][-1], "step: ", total_timesteps)
             wandb.log(
-                {"success_rate":np.mean(logger.data['success_rate'][-1]).item(),
+                {"a_success_rate":np.mean(logger.data['success_rate'][-1]).item(),
                 }, step=total_timesteps)
 
             # Save results

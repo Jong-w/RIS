@@ -196,3 +196,15 @@ utils/__pycache__/data_aug.cpython-310.pyc
 utils/__pycache__/logger.cpython-39.pyc
 utils/__pycache__/logger.cpython-310.pyc
 anaconda.sh
+results/AntFbMedTrainEnv-v1/RIS/RIS_ant/actor.pth
+results/AntFbMedTrainEnv-v1/RIS/RIS_ant/critic.pth
+results/AntFbMedTrainEnv-v1/RIS/RIS_ant/log.pkl
+results/AntFbMedTrainEnv-v1/RIS/RIS_ant/subgoal_net.pth
+results/AntFgMedTrainEnv-v1/RIS/RIS_ant/actor.pth
+results/AntFgMedTrainEnv-v1/RIS/RIS_ant/critic.pth
+results/AntFgMedTrainEnv-v1/RIS/RIS_ant/log.pkl
+results/AntFgMedTrainEnv-v1/RIS/RIS_ant/subgoal_net.pth
+results/AntMazeMedTrainEnv-v1/RIS/RIS_ant/actor.pth
+results/AntMazeMedTrainEnv-v1/RIS/RIS_ant/critic.pth
+results/AntMazeMedTrainEnv-v1/RIS/RIS_ant/log.pkl
+results/AntMazeMedTrainEnv-v1/RIS/RIS_ant/subgoal_net.pth
